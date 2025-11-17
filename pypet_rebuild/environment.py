@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 from .exploration import cartesian_product
 from .storage import StorageService
+from .parameters import Result
 from .trajectory import Trajectory
 
 
@@ -55,19 +57,54 @@ class Environment:
         space: Mapping[str, Sequence[Any]],
         _max_workers: int | None = None,
     ) -> None:
-        """Placeholder API for parallel exploration.
+        """Run exploration in parallel using a thread pool.
 
-        At this stage, this method simply delegates to :meth:`run_exploration`
-        and ignores ``max_workers``. The intent is to stabilize the public
-        interface so that we can later plug in a concrete parallel execution
-        strategy (e.g. ``concurrent.futures`` or an external executor) without
-        breaking user code.
+        Notes
+        -----
+        - For thread safety, simulations run against temporary Trajectory
+          instances and return result mappings which are merged back into the
+          main trajectory. If the function does not return a mapping, any
+          results written to the temporary trajectory will be collected and
+          merged.
+        - We use threads initially to avoid pickling constraints on Windows.
+          A process-based executor can be added later with a stricter contract.
         """
 
-        # For now, run sequentially. Parallelism will be introduced in a
-        # future iteration once the execution and error-handling model is
-        # fully specified.
-        self.run_exploration(func, space)
+        combos = list(cartesian_product(space))
+        base_name = self.trajectory.name
+        # Snapshot baseline parameters from the main trajectory so that workers
+        # inherit defaults (e.g., values not explicitly varied in the space).
+        baseline_params: dict[str, Any] = {
+            name: param.value for name, param in self.trajectory.parameters.items()
+        }
+
+        def _worker(combo: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+            local = Trajectory(name=base_name)
+            # Apply baseline defaults first, then override with the combo.
+            local.set_parameter_values(baseline_params)
+            local.set_parameter_values(combo)
+            before = set(local.results.keys())
+            ret = func(local)
+            if isinstance(ret, Mapping):
+                results_map = dict(ret)
+            else:
+                after = set(local.results.keys())
+                new_keys = after - before
+                results_map = {k: local.results[k].value for k in new_keys}
+            return combo, results_map
+
+        with ThreadPoolExecutor(max_workers=_max_workers) as ex:
+            futures = [ex.submit(_worker, combo) for combo in combos]
+            for idx, fut in enumerate(futures):
+                params_map, results_map = fut.result()
+                run_id = f"{idx:05d}"
+                # Mirror results into main trajectory for convenience
+                for name, value in results_map.items():
+                    self.trajectory.add_result(Result(name=name, value=value))
+                self.trajectory.record_run(run_id, params_map, results_map)
+
+        if self.storage is not None:
+            self.storage.save(self.trajectory)
 
     def run_exploration(
         self,
@@ -86,9 +123,32 @@ class Environment:
             to be combined via a cartesian product.
         """
 
-        for combo in cartesian_product(space):
+        for idx, combo in enumerate(cartesian_product(space)):
+            # Apply parameter combination
             self.trajectory.set_parameter_values(combo)
-            func(self.trajectory)
+
+            # Track existing results to compute delta if the function does not return a mapping
+            before_keys = set(self.trajectory.results.keys())
+
+            ret = func(self.trajectory)
+
+            # Determine results for run record
+            results_map: dict[str, Any]
+            if isinstance(ret, Mapping):
+                results_map = dict(ret)
+                # Also mirror into trajectory results directly for convenience
+                for name, value in results_map.items():
+                    self.trajectory.add_result(
+                        Result(name=name, value=value)
+                    )
+            else:
+                after_keys = set(self.trajectory.results.keys())
+                new_keys = after_keys - before_keys
+                results_map = {k: self.trajectory.results[k].value for k in new_keys}
+
+            # Record run snapshot and mirror results under by_run namespace
+            run_id = f"{idx:05d}"
+            self.trajectory.record_run(run_id, combo, results_map)
 
         if self.storage is not None:
             self.storage.save(self.trajectory)

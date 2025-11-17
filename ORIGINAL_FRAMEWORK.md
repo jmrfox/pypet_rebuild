@@ -1,6 +1,6 @@
 # Original pypet Framework
 
-This document summarizes the design and capabilities of the original **pypet** (Python Parameter Exploration Toolkit) project. The goal is to provide a concise but comprehensive reference for rebuilding a modern version (`pypet_rebuild`) with updated practices and dependencies.
+This document summarizes the design and capabilities of the original **pypet** (Python Parameter Exploration Toolkit) project. It is intended as a concise, comprehensive reference to the original framework’s concepts, modules, and behavior.
 
 ---
 
@@ -313,20 +313,4 @@ This structure reflects the framework’s emphasis on **conceptual introduction*
 
 ---
 
-## 10. Key Design Takeaways for pypet_rebuild
-
-For the modern rebuild, the core ideas to preserve (or thoughtfully reimagine) are:
-
-- **Central trajectory abstraction** combining parameters, results, and metadata.
-- **Natural naming** for ergonomic access to complex hierarchies.
-- **Decoupled simulation function** + environment/execution engine.
-- **Automatic, structured storage** of parameters and results.
-- **Extensibility** for data types, storage backends, and domain integrations.
-- **Parallel and distributed execution** support (with clear separation of concerns).
-- **Strong focus on reproducibility**, including provenance, logging, and resume capabilities.
-
-`pypet_rebuild` can now use this description as a baseline to:
-
-- Modernize APIs (type hints, dataclasses, async options, pluggable storage, etc.).
-- Reassess dependencies (HDF5 vs. alternatives, optional integrations, simplified requirements).
-- Clarify the core use cases and reduce complexity while keeping the original strengths.
+ 

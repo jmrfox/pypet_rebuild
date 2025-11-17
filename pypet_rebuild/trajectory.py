@@ -152,6 +152,7 @@ class Trajectory:
     name: str
     _parameters: MutableMapping[str, Parameter[Any]] = field(default_factory=dict)
     _results: MutableMapping[str, Result[Any]] = field(default_factory=dict)
+    _run_records: list[dict[str, Any]] = field(default_factory=list)
 
     # --- Parameters ---
 
@@ -205,3 +206,41 @@ class Trajectory:
         """
 
         return _ResultNamespace(self)
+
+    # --- Run grouping --------------------------------------------------
+
+    def record_run(self, run_id: str, params: Mapping[str, Any], results: Mapping[str, Any]) -> None:
+        """Record a run snapshot and mirror results under a by_run namespace.
+
+        This method appends a compact record to an internal list for quick
+        access and also adds namespaced results like
+        ``by_run.<run_id>.<result_name>`` to the results mapping to support
+        natural naming and HDF5 persistence.
+        """
+
+        self._run_records.append({"id": run_id, "params": dict(params), "results": dict(results)})
+
+        for name, value in results.items():
+            namespaced = f"by_run.{run_id}.{name}"
+            self._results[namespaced] = Result(name=namespaced, value=value)
+
+    def list_runs(self) -> list[str]:
+        """Return the list of recorded run IDs in insertion order."""
+
+        return [r["id"] for r in self._run_records]
+
+    def get_run_params(self, run_id: str) -> Mapping[str, Any]:
+        """Return the parameter snapshot for a given run ID."""
+
+        for rec in self._run_records:
+            if rec.get("id") == run_id:
+                return dict(rec.get("params", {}))
+        return {}
+
+    def get_run_results(self, run_id: str) -> Mapping[str, Any]:
+        """Return the results mapping for a given run ID."""
+
+        for rec in self._run_records:
+            if rec.get("id") == run_id:
+                return dict(rec.get("results", {}))
+        return {}

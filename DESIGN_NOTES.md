@@ -118,3 +118,38 @@ Planned direction (subject to change):
 - Use a pluggable executor interface (e.g. based on `concurrent.futures.Executor`) that can be provided to `Environment`.
 - Keep the core API agnostic to the exact parallelism mechanism (threads, processes, external executors).
 - Make error handling and partial-failure semantics explicit in this document before implementing true parallelism.
+
+---
+
+## 9. Run grouping design
+
+- Each run is assigned a monotonically increasing zero-padded ID (e.g. `00000`).
+- The trajectory keeps an in-memory log of runs via `record_run(run_id, params, results)` and query helpers:
+  - `list_runs() -> list[str]`
+  - `get_run_params(run_id) -> Mapping[str, Any]`
+  - `get_run_results(run_id) -> Mapping[str, Any]`
+- For persistence and natural naming, per-run results are mirrored under `results.by_run.<run_id>.<name>`.
+- Recommended parallel contract: simulation returns a mapping `{name: value}` for results. Sequential paths may still write results to the trajectory directly; if no mapping is returned, new results are diffed and recorded.
+
+Rationale:
+
+- Aligns with provenance and resume needs while keeping the core API simple.
+- Mirrors a common pattern in original pypet where run-level structure exists in storage and is queryable.
+
+---
+
+## 10. Storage schema: pandas and arrays
+
+- Storage modes (group attribute `kind`):
+  - `json`: JSON-serializable value in `attrs["value"]`.
+  - `ndarray`: dataset `data` stores NumPy arrays (shape/dtype native).
+  - `pandas_series`: `attrs["value"] = series.to_json(orient="split")`, `attrs["pandas_dtype"] = str(series.dtype)`.
+  - `pandas_frame`: `attrs["value"] = frame.to_json(orient="split")`, `attrs["pandas_dtypes"] = json.dumps({col: str(dtype)})`.
+- Loading reverses this process and restores dtypes via `astype(...)`.
+- Group paths use constants (`HDF5_ROOT_GROUP`, `HDF5_PARAMETERS_GROUP`, `HDF5_RESULTS_GROUP`).
+
+Planned refinements:
+
+- Move large JSON blobs from attributes to UTF-8 datasets for robustness.
+- Consider compression/chunking for large arrays; document defaults.
+- Add lazy/dynamic loading hooks (partial reads) for large time series.
