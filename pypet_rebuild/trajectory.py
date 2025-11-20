@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Iterable, MutableMapping
+from typing import Any, Iterable, MutableMapping, Callable, Sequence
+from datetime import datetime, timezone
 
 from .parameters import Parameter, Result
 
@@ -218,7 +219,12 @@ class Trajectory:
         natural naming and HDF5 persistence.
         """
 
-        self._run_records.append({"id": run_id, "params": dict(params), "results": dict(results)})
+        self._run_records.append({
+            "id": run_id,
+            "params": dict(params),
+            "results": dict(results),
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        })
 
         for name, value in results.items():
             namespaced = f"by_run.{run_id}.{name}"
@@ -244,3 +250,41 @@ class Trajectory:
             if rec.get("id") == run_id:
                 return dict(rec.get("results", {}))
         return {}
+
+    # --- Run utilities -------------------------------------------------
+
+    def find_runs(self, predicate: Callable[..., bool], names: Sequence[str]) -> list[str]:
+        """Return run IDs where predicate over selected parameter names is True.
+
+        Parameters
+        ----------
+        predicate:
+            Callable receiving parameter values in the same order as `names`.
+        names:
+            Parameter names to extract from the recorded run parameter snapshots.
+        """
+
+        matched: list[str] = []
+        for rec in self._run_records:
+            params = rec.get("params", {})
+            values = [params.get(n) for n in names]
+            try:
+                if predicate(*values):
+                    matched.append(rec.get("id", ""))
+            except (TypeError, ValueError):
+                # If predicate raises due to arg mismatch or bad values, skip this run
+                continue
+        return matched
+
+    def collect_runs(self, result_name: str) -> list[Any]:
+        """Collect a result value across runs using the by_run mirror.
+
+        Returns a list of values ordered by `list_runs()`; missing entries are skipped.
+        """
+
+        values: list[Any] = []
+        for run_id in self.list_runs():
+            key = f"by_run.{run_id}.{result_name}"
+            if key in self._results:
+                values.append(self._results[key].value)
+        return values

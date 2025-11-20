@@ -27,16 +27,27 @@ def flatten(nested: Iterable[Iterable[T]]) -> list[T]:
     return [item for sub in nested for item in sub]
 
 
-def inspect_h5(file_path: str | Path, *, max_preview: int = 3) -> str:
+def inspect_h5(
+    file_path: str | Path,
+    *,
+    max_preview: int = 3,
+    show_values: bool = False,
+    value_max_chars: int = 200,
+    show_attrs: bool = False,
+) -> str:
     lines: list[str] = []
 
     def _decode_attr(v: object) -> object:
         if isinstance(v, (bytes, bytearray)):
             try:
                 return v.decode("utf-8")
-            except Exception:
+            except UnicodeDecodeError:
                 return repr(v)
         return v
+
+    def _truncate(v: object) -> str:
+        s = repr(v)
+        return s if len(s) <= value_max_chars else s[: value_max_chars - 3] + "..."
 
     def _visit(name: str, obj: h5py.Group | h5py.Dataset) -> None:
         if isinstance(obj, h5py.Group):
@@ -66,6 +77,37 @@ def inspect_h5(file_path: str | Path, *, max_preview: int = 3) -> str:
                         preview = "value=<unparseable>"
                 if preview:
                     desc += f" kind={kind} {preview}"
+                if show_values and isinstance(raw, str):
+                    try:
+                        parsed = json.loads(raw)
+                        if kind == "json":
+                            if isinstance(parsed, dict):
+                                for k, v in list(parsed.items())[:max_preview]:
+                                    lines.append(f"  value.{k} = {_truncate(v)}")
+                            else:
+                                lines.append(f"  value = {_truncate(parsed)}")
+                        elif kind == "pandas_series":
+                            idx = parsed.get("index", [])
+                            data = parsed.get("data", [])
+                            for i in range(min(max_preview, len(idx))):
+                                lines.append(f"  series[{_truncate(idx[i])}] = {_truncate(data[i])}")
+                        elif kind == "pandas_frame":
+                            idx = parsed.get("index", [])
+                            cols = parsed.get("columns", [])
+                            data = parsed.get("data", [])
+                            for r in range(min(max_preview, len(idx))):
+                                row = data[r] if r < len(data) else []
+                                for c in range(min(max_preview, len(cols))):
+                                    val = row[c] if c < len(row) else None
+                                    lines.append(
+                                        f"  df[{_truncate(idx[r])},{_truncate(cols[c])}] = {_truncate(val)}"
+                                    )
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        lines.append("  value=<unparseable>")
+            if show_attrs and attrs:
+                safe_attrs = {k: _truncate(v) for k, v in attrs.items() if k != "value"}
+                if safe_attrs:
+                    lines.append(f"  attrs={safe_attrs}")
             lines.append(desc)
         else:
             shape = obj.shape
@@ -73,10 +115,13 @@ def inspect_h5(file_path: str | Path, *, max_preview: int = 3) -> str:
             desc = f"[Dataset] /{name} shape={shape} dtype={dtype}"
             try:
                 if obj.size > 0:
-                    slices = tuple(slice(0, min(3, n)) for n in shape)
+                    slices = tuple(slice(0, min(max_preview, n)) for n in shape)
                     data = obj[slices].tolist()
-                    desc += f" preview={str(data)[:120]}"
-            except Exception:
+                    if show_values and (obj.size <= max_preview ** max(1, len(shape))):
+                        desc += f" values={_truncate(data)}"
+                    else:
+                        desc += f" preview={_truncate(data)}"
+            except (RuntimeError, TypeError, ValueError):
                 pass
             lines.append(desc)
 

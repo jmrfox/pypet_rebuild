@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 from .exploration import cartesian_product
 from .storage import StorageService
@@ -20,6 +20,26 @@ from .trajectory import Trajectory
 
 SimulationFunction = Callable[[Trajectory], None]
 
+
+def _process_worker(
+    base_name: str,
+    baseline_params: Mapping[str, Any],
+    combo: Mapping[str, Any],
+    func: SimulationFunction,
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    local = Trajectory(name=base_name)
+    local.set_parameter_values(baseline_params)
+    local.set_parameter_values(combo)
+    before = set(local.results.keys())
+    ret = func(local)
+    after = set(local.results.keys())
+    new_keys = after - before
+    direct_map = {k: local.results[k].value for k in new_keys}
+    if isinstance(ret, Mapping):
+        results_map = {**direct_map, **dict(ret)}
+    else:
+        results_map = direct_map
+    return combo, results_map
 
 @dataclass
 class Environment:
@@ -51,11 +71,45 @@ class Environment:
         if self.storage is not None:
             self.storage.save(self.trajectory)
 
+    def run_exploration_processes(
+        self,
+        func: SimulationFunction,
+        space: Mapping[str, Sequence[Any]],
+        _max_workers: int | None = None,
+        resume: bool = False,
+    ) -> None:
+        combos = list(cartesian_product(space))
+        base_name = self.trajectory.name
+        baseline_params: dict[str, Any] = {
+            name: param.value for name, param in self.trajectory.parameters.items()
+        }
+
+        existing = set(self.trajectory.list_runs()) if resume else set()
+
+        with ProcessPoolExecutor(max_workers=_max_workers) as ex:
+            pending = [(i, c) for i, c in enumerate(combos) if f"{i:05d}" not in existing]
+            futures = [
+                ex.submit(_process_worker, base_name, baseline_params, combo, func)
+                for _, combo in pending
+            ]
+            for (idx, _), fut in zip(pending, futures):
+                params_map, results_map = fut.result()
+                run_id = f"{idx:05d}"
+                for name, value in results_map.items():
+                    self.trajectory.add_result(Result(name=name, value=value))
+                # Combine baseline defaults with varied parameters for a full snapshot
+                snapshot_params = {**baseline_params, **dict(params_map)}
+                self.trajectory.record_run(run_id, snapshot_params, results_map)
+
+        if self.storage is not None:
+            self.storage.save(self.trajectory)
+
     def run_exploration_parallel(
         self,
         func: SimulationFunction,
         space: Mapping[str, Sequence[Any]],
         _max_workers: int | None = None,
+        resume: bool = False,
     ) -> None:
         """Run exploration in parallel using a thread pool.
 
@@ -77,6 +131,7 @@ class Environment:
         baseline_params: dict[str, Any] = {
             name: param.value for name, param in self.trajectory.parameters.items()
         }
+        existing = set(self.trajectory.list_runs()) if resume else set()
 
         def _worker(combo: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
             local = Trajectory(name=base_name)
@@ -85,23 +140,28 @@ class Environment:
             local.set_parameter_values(combo)
             before = set(local.results.keys())
             ret = func(local)
+            # Always collect any new results added directly to the local trajectory
+            after = set(local.results.keys())
+            new_keys = after - before
+            direct_map = {k: local.results[k].value for k in new_keys}
             if isinstance(ret, Mapping):
-                results_map = dict(ret)
+                # Merge maps; explicit return values take precedence on key conflicts
+                results_map = {**direct_map, **dict(ret)}
             else:
-                after = set(local.results.keys())
-                new_keys = after - before
-                results_map = {k: local.results[k].value for k in new_keys}
+                results_map = direct_map
             return combo, results_map
 
         with ThreadPoolExecutor(max_workers=_max_workers) as ex:
-            futures = [ex.submit(_worker, combo) for combo in combos]
-            for idx, fut in enumerate(futures):
+            pending = [(i, c) for i, c in enumerate(combos) if f"{i:05d}" not in existing]
+            futures = [ex.submit(_worker, combo) for _, combo in pending]
+            for (idx, _), fut in zip(pending, futures):
                 params_map, results_map = fut.result()
                 run_id = f"{idx:05d}"
-                # Mirror results into main trajectory for convenience
                 for name, value in results_map.items():
                     self.trajectory.add_result(Result(name=name, value=value))
-                self.trajectory.record_run(run_id, params_map, results_map)
+                # Merge baseline defaults with varied combo to record a full snapshot
+                snapshot_params = {**baseline_params, **dict(params_map)}
+                self.trajectory.record_run(run_id, snapshot_params, results_map)
 
         if self.storage is not None:
             self.storage.save(self.trajectory)
@@ -110,6 +170,7 @@ class Environment:
         self,
         func: SimulationFunction,
         space: Mapping[str, Sequence[Any]],
+        resume: bool = False,
     ) -> None:
         """Run a simulation function over an explored parameter space.
 
@@ -123,7 +184,11 @@ class Environment:
             to be combined via a cartesian product.
         """
 
+        existing = set(self.trajectory.list_runs()) if resume else set()
         for idx, combo in enumerate(cartesian_product(space)):
+            run_id = f"{idx:05d}"
+            if run_id in existing:
+                continue
             # Apply parameter combination
             self.trajectory.set_parameter_values(combo)
 
@@ -147,8 +212,8 @@ class Environment:
                 results_map = {k: self.trajectory.results[k].value for k in new_keys}
 
             # Record run snapshot and mirror results under by_run namespace
-            run_id = f"{idx:05d}"
-            self.trajectory.record_run(run_id, combo, results_map)
+            snapshot_params = {name: param.value for name, param in self.trajectory.parameters.items()}
+            self.trajectory.record_run(run_id, snapshot_params, results_map)
 
         if self.storage is not None:
             self.storage.save(self.trajectory)

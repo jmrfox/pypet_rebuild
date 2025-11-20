@@ -314,3 +314,46 @@ This structure reflects the framework’s emphasis on **conceptual introduction*
 ---
 
  
+## 11. Feature Checklist (Original pypet)
+
+- **Trajectory (Tree Container)**
+  - Hierarchical groups and leaves for parameters and results
+  - Natural naming and dot-path access
+  - Annotations/metadata on nodes; comments and tags
+
+- **Parameters**
+  - Typed parameter nodes (int/float/str/bool, arrays, pandas, etc.)
+  - Exploration ranges and sampling; cartesian expansion
+  - Derived parameters and linking between nodes
+
+- **Results**
+  - Result nodes for simulation outputs
+  - Storage of scalars, arrays, tabular data, and custom objects (with pickling)
+
+- **Exploration & Execution**
+  - Cartesian product exploration over parameter space
+  - Environment coordinates runs and manages lifecycle hooks
+  - Post-processing and analysis phases
+
+- **Storage (HDF5 via PyTables)**
+  - Structured, automatic persistence of trajectory tree
+  - Resume/continue runs; dynamic/lazy loading of data
+  - Compression/chunking options; version and provenance info
+
+- **Parallel & Distributed**
+  - Local multiprocessing
+  - Optional SCOOP-based distributed execution
+
+- **Integrations**
+  - Brian2 (spiking neural networks)
+  - DEAP (evolutionary algorithms)
+  - Sumatra (experiment tracking)
+  - GitPython, psutil, dill and other ecosystem tools
+
+- **Robustness & Reproducibility**
+  - Run grouping, snapshots, and provenance metadata
+  - Logging and error handling; partial run recovery
+
+- **Documentation & Examples**
+  - Comprehensive user manual and library reference
+  - Tutorials and domain-specific guides

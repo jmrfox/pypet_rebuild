@@ -7,6 +7,7 @@ results (including a pandas DataFrame time series) in an HDF5 file.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import Mapping
 
@@ -20,6 +21,7 @@ from pypet_rebuild import (
     Parameter,
     Trajectory,
 )
+from pypet_rebuild.utils import inspect_h5
 
 
 def simulate(traj: Trajectory) -> Mapping[str, object]:
@@ -70,6 +72,12 @@ def simulate(traj: Trajectory) -> Mapping[str, object]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["threads", "processes"], default="threads")
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--out", type=Path, default=Path("examples/output") / "sir_sweep.h5")
+    parser.add_argument("--inspect", action="store_true")
+    args = parser.parse_args()
     traj = Trajectory(name="sir-sweep")
 
     # Seed parameters (defaults). Values overwritten as needed during exploration.
@@ -79,7 +87,9 @@ def main() -> None:
     traj.add_parameter(Parameter(name="sir.t_max", value=60.0))
     traj.add_parameter(Parameter(name="sir.dt", value=0.5))
 
-    storage = HDF5StorageService(file_path=Path("examples/output") / "sir_sweep.h5")
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    storage = HDF5StorageService(file_path=out_path)
     env = Environment(trajectory=traj, storage=storage)
 
     space = {
@@ -88,8 +98,10 @@ def main() -> None:
         # Could also vary i0 and dt in the grid if desired
     }
 
-    # Use parallel exploration to speed up the sweep
-    env.run_exploration_parallel(simulate, space=space, _max_workers=4)
+    if args.mode == "threads":
+        env.run_exploration_parallel(simulate, space=space, _max_workers=args.workers)
+    else:
+        env.run_exploration_processes(simulate, space=space, _max_workers=args.workers)
 
     # Summary
     print(f"Completed runs: {len(traj.list_runs())}")
@@ -99,6 +111,9 @@ def main() -> None:
         res = traj.get_run_results(rid)
         print("First run results keys:", list(res.keys()))
         print("HDF5 saved to:", storage.file_path)
+    if args.inspect:
+        print("HDF5 output inspection:")
+        print(inspect_h5(str(storage.file_path), show_values=True))
 
 
 if __name__ == "__main__":

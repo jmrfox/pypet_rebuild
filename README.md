@@ -2,7 +2,7 @@
 
 An attempt at rebuilding Robert Meyer's pypet.
 
-The original pypet package, while fantastic, is a little outdated in terms of modern Python practices and dependencies. This is an attempt to rebuild it with modern practices in mind. This is all my own code, but credit to Robert Meyer for the original idea and implementation.
+The original pypet package, while fantastic, is a little outdated in terms of modern Python practices and dependencies. This is an attempt to rebuild it with modern practices in mind. This is all my own code, but credit to [Robert Meyer](https://github.com/SmokinCaterpillar) and other contributors for the original ideas and implementations.
  
 ---
 
