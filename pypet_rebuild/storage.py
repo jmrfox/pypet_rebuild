@@ -151,10 +151,22 @@ class HDF5StorageService(ABC):
 
             # Persist run records (parameters snapshot + timestamp). We do not duplicate
             # per-run result values since these are mirrored under results/by_run.*
+            def _json_safe_value(v):
+                try:
+                    json.dumps(v)
+                    return v
+                except (TypeError, ValueError):
+                    if isinstance(v, np.ndarray):
+                        return v.tolist()
+                    # Best-effort fallback
+                    return repr(v)
+
             for rec in getattr(trajectory, "_run_records", []):
                 run_id = str(rec.get("id", ""))
                 rg = runs_group.create_group(run_id)
-                rg.attrs["params"] = json.dumps(rec.get("params", {}))
+                params_map = rec.get("params", {})
+                params_safe = {str(k): _json_safe_value(v) for k, v in params_map.items()}
+                rg.attrs["params"] = json.dumps(params_safe)
                 ts = rec.get("timestamp")
                 if ts is not None:
                     rg.attrs["timestamp"] = ts

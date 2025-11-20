@@ -21,8 +21,20 @@ This document summarizes the examples from the original pypet repository (branch
 - **example_03_trajectory_merging.py**
   - Runs two trajectories with overlapping parameter spaces and merges them, removing duplicates; loads data and iterates runs.
   - Demonstrates: merging trajectories (`f_merge`), duplicate removal, backups, moving/deleting nodes, and `f_set_crun` run scoping.
-  - Rebuild mapping: Not implemented; consider later: merge utilities and run-scoped views.
+  - Rebuild mapping: Implemented (in-memory merge API with duplicate removal) and example recreated.
   - Porting notes: Provide an offline merge utility operating on HDF5 files/trajectories with duplicate detection by param snapshot; add read-only run-scoped view helpers.
+
+- **example_05_custom_parameter.py**
+  - Simulates the Lorenz attractor with a custom parameter style; explores different initial conditions, stores large arrays, and reloads for analysis/plotting.
+  - Demonstrates: custom parameter pattern, ndarray result storage, reloading for analysis.
+  - Rebuild mapping: Implemented as `examples/example_05_custom_parameter.py` with ndarray storage and reload; tests added.
+  - Porting notes: We model custom parameters via normal typed parameters and results; no dynamic class registration needed for MVP.
+
+- **example_06_parameter_presetting.py**
+  - Uses a preset parameter to switch control flow between two differential equations (Lorenz vs. Roessler). Explores initial conditions and runs Euler integration.
+  - Demonstrates: parameter presetting controlling configuration; exploration over array-valued initial conditions; storing large arrays per run.
+  - Rebuild mapping: Implemented as `examples/example_06_parameter_presetting.py`; tests planned to verify both branches.
+  - Porting notes: Use a simple selector parameter `diff_name` to branch logic; arrays are stored as ndarrays and run snapshots serialize non-JSON types safely.
 
 ## Parallel and Many Runs
 

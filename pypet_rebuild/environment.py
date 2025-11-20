@@ -26,12 +26,18 @@ def _process_worker(
     baseline_params: Mapping[str, Any],
     combo: Mapping[str, Any],
     func: SimulationFunction,
+    func_args: Sequence[Any] | None,
+    func_kwargs: Mapping[str, Any] | None,
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     local = Trajectory(name=base_name)
     local.set_parameter_values(baseline_params)
     local.set_parameter_values(combo)
     before = set(local.results.keys())
-    ret = func(local)
+    if func_args is None:
+        func_args = ()
+    if func_kwargs is None:
+        func_kwargs = {}
+    ret = func(local, *func_args, **func_kwargs)
     after = set(local.results.keys())
     new_keys = after - before
     direct_map = {k: local.results[k].value for k in new_keys}
@@ -77,6 +83,9 @@ class Environment:
         space: Mapping[str, Sequence[Any]],
         _max_workers: int | None = None,
         resume: bool = False,
+        *,
+        func_args: Sequence[Any] | None = None,
+        func_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         combos = list(cartesian_product(space))
         base_name = self.trajectory.name
@@ -89,7 +98,15 @@ class Environment:
         with ProcessPoolExecutor(max_workers=_max_workers) as ex:
             pending = [(i, c) for i, c in enumerate(combos) if f"{i:05d}" not in existing]
             futures = [
-                ex.submit(_process_worker, base_name, baseline_params, combo, func)
+                ex.submit(
+                    _process_worker,
+                    base_name,
+                    baseline_params,
+                    combo,
+                    func,
+                    func_args,
+                    func_kwargs,
+                )
                 for _, combo in pending
             ]
             for (idx, _), fut in zip(pending, futures):
@@ -110,6 +127,9 @@ class Environment:
         space: Mapping[str, Sequence[Any]],
         _max_workers: int | None = None,
         resume: bool = False,
+        *,
+        func_args: Sequence[Any] | None = None,
+        func_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         """Run exploration in parallel using a thread pool.
 
@@ -139,7 +159,12 @@ class Environment:
             local.set_parameter_values(baseline_params)
             local.set_parameter_values(combo)
             before = set(local.results.keys())
-            ret = func(local)
+            if func_args is None:
+                _fa: Sequence[Any] = ()
+            else:
+                _fa = tuple(func_args)
+            _fk: Mapping[str, Any] = {} if func_kwargs is None else dict(func_kwargs)
+            ret = func(local, *_fa, **_fk)
             # Always collect any new results added directly to the local trajectory
             after = set(local.results.keys())
             new_keys = after - before
@@ -171,6 +196,9 @@ class Environment:
         func: SimulationFunction,
         space: Mapping[str, Sequence[Any]],
         resume: bool = False,
+        *,
+        func_args: Sequence[Any] | None = None,
+        func_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         """Run a simulation function over an explored parameter space.
 
@@ -195,7 +223,12 @@ class Environment:
             # Track existing results to compute delta if the function does not return a mapping
             before_keys = set(self.trajectory.results.keys())
 
-            ret = func(self.trajectory)
+            if func_args is None:
+                _fa2: Sequence[Any] = ()
+            else:
+                _fa2 = tuple(func_args)
+            _fk2: Mapping[str, Any] = {} if func_kwargs is None else dict(func_kwargs)
+            ret = func(self.trajectory, *_fa2, **_fk2)
 
             # Determine results for run record
             results_map: dict[str, Any]

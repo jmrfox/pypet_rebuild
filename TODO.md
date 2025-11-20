@@ -41,9 +41,12 @@ High-level roadmap and progress tracking for rebuilding the original **pypet** f
   - [x] Add targeted tests for `utils.inspect_h5` error cases.
 
 - [x] Example 03: trajectory merge implemented (in-memory API, tests, example script).
-- [ ] Example 05: Lorenz/custom parameter — implement example script and tests; verify ndarray store + reload.
+- [x] Example 05: Lorenz/custom parameter implemented (example script + tests; ndarray store/reload).
+- [x] Example 06: Parameter Presetting implemented (example script + tests; Lorenz/Roessler via preset selector).
+- [x] Example 12: Sharing Data Between Processes implemented (example + test; resume=False caveat documented).
+- [ ] Example 13: Post-Processing & Pipelining — single-script example + test to verify persisted aggregated results.
 
- ---
+---
 
 ## 3. Core Framework Design
 
